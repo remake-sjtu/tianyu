@@ -86,54 +86,75 @@ def vectorized_evaluation(search_grid, stars_vectors, fov=5 * u.deg):
     # 统计每个网格点可以看见的星星数量
     return np.sum(cos_theta >= cos_fov_half, axis=1)
 
+def vectorized_evaluation(search_grid, stars_vectors, star_weights, fov=5 * u.deg):
+    # 修改为权重评估
+    az_rad = np.array([p[0].to_value(u.rad) for p in search_grid])
+    alt_rad = np.array([p[1].to_value(u.rad) for p in search_grid])
+
+
+    # 转换为单位向量，球坐标系到笛卡尔坐标系
+    x = np.cos(alt_rad) * np.sin(az_rad)
+    y = np.cos(alt_rad) * np.cos(az_rad)
+    z = np.sin(alt_rad)
+    grid_vectors = np.column_stack([x, y, z])
+
+    # 计算点积矩阵
+    cos_theta = np.dot(grid_vectors, stars_vectors.T)
+
+    # 计算FOV阈值（转换为数值比较）
+    # 点积计算进行比较，也就是星星在对应网格点（指示方向）和视场极限范围之间
+    cos_fov_half = np.cos(fov.to_value(u.rad) / 2)
+
+    mask = cos_theta >= cos_fov_half
+    weighted_sums = np.dot(mask.astype(float), star_weights)  # 使用浮点矩阵乘法
+
+    return weighted_sums
+
 
 # 示例用法
 if __name__ == "__main__":
-    # 生成模拟星数据（1000颗随机分布的星）
-    # 随机种子固定为111
+    # 生成带星等的模拟数据
     np.random.seed(111)
-    # 100000 大概需要10分钟，内存占用很多
-    # 10000 需要2秒左右 i5芯片，
     num_stars = 10000
     stars_icrs = SkyCoord(
         ra=np.random.uniform(0, 360, num_stars) * u.deg,
         dec=np.random.uniform(-90, 90, num_stars) * u.deg
     )
+    mags = np.random.uniform(0, 10, num_stars)  # 星等范围0-10
 
-    # 转换为地平坐标 方便计算
     location = EarthLocation(lon=111 * u.deg, lat=22 * u.deg)
     time = Time('2024-06-06 6:06:66')
     stars_altaz = stars_icrs.transform_to(AltAz(location=location, obstime=time))
 
-    # 生成带星等的星数据（过滤暗星）
-    # 暂时去除过滤条件 todo
+    # 过滤亮星（假设mag_limit=6）
     mag_limit = 6
-    valid_stars = [s for s in stars_altaz ]
+    valid_mask = mags <= mag_limit
+    valid_stars_altaz = stars_altaz[valid_mask]
+    valid_mags = mags[valid_mask]
 
-    # 预处理星数据：转换为单位向量
-    az_rad = np.array([s.az.to_value(u.rad) for s in valid_stars])
-    alt_rad = np.array([s.alt.to_value(u.rad) for s in valid_stars])
+    # 预处理星数据
+    az_rad = valid_stars_altaz.az.to_value(u.rad)
+    alt_rad = valid_stars_altaz.alt.to_value(u.rad)
 
     x = np.cos(alt_rad) * np.sin(az_rad)
     y = np.cos(alt_rad) * np.cos(az_rad)
     z = np.sin(alt_rad)
     stars_vectors = np.column_stack([x, y, z])
+    star_weights = 100 ** (-0.2 * valid_mags)  # 计算权重
 
-    # 获取目标区域
+    # 获取目标区域并生成网格
     regions = get_target_regions(time, 111, 22)
-
-    # 生成搜索网格
     search_grid = generate_search_grid(regions, step=0.1 * u.deg)
     print(f"生成网格点数量: {len(search_grid)}")
 
-    # 向量化评估
-    counts = vectorized_evaluation(search_grid, stars_vectors)
+    # 计算权重总和
+    weight_totals = vectorized_evaluation(search_grid, stars_vectors, star_weights)
 
-    # 寻找最优指向
-    if len(counts) > 0:
-        min_index = np.argmin(counts)
+    # 寻找最优解
+    if len(weight_totals) > 0:
+        min_index = np.argmin(weight_totals)
         best_point = search_grid[min_index]
         print(f"最佳指向：方位角 {best_point[0].to_value(u.deg):.1f}°，高度角 {best_point[1].to_value(u.deg):.1f}°")
-        print(f"该区域亮星数量：{counts[min_index]}颗")
+        print(f"总干扰权重：{weight_totals[min_index]:.4f}")
     else:
         print("未找到有效网格点")
