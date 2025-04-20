@@ -4,9 +4,6 @@ from astropy.time import Time
 import astropy.units as u
 from scipy.spatial.transform import Rotation
 
-# --------------------------
-# 核心功能函数（已修正参数名）
-# --------------------------
 
 def generate_custom_search_grid(center_ra, center_dec, xfov, yfov, theta,
                                 obs_time, obs_lon, obs_lat, step=1 * u.deg):
@@ -53,9 +50,7 @@ def generate_custom_search_grid(center_ra, center_dec, xfov, yfov, theta,
             continue
 
     return grid_points
-# --------------------------
-# 其他函数保持不变
-# --------------------------
+
 
 def vectorized_evaluation(search_grid, stars_vectors, star_weights, fov=5*u.deg):
     """向量化权重评估"""
@@ -72,9 +67,6 @@ def vectorized_evaluation(search_grid, stars_vectors, star_weights, fov=5*u.deg)
     mask = cos_theta >= cos_fov_half
     return np.dot(mask.astype(float), star_weights)
 
-# --------------------------
-# 示例使用
-# --------------------------
 
 def main():
     # 用户输入参数

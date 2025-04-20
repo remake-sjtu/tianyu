@@ -73,7 +73,6 @@ def calculate_region_visibility(
     
     return True, np.sum(in_fov), np.sum(weights)
 
-# 示例使用
 def main():
     # 初始化观测参数
     obs_location = EarthLocation(lon=124.4*u.deg, lat=44.9*u.deg)  
