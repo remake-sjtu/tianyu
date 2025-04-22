@@ -1,13 +1,26 @@
 import pandas as pd
 import numpy as np
 from astropy.wcs import WCS
-from astropy.coordinates import SkyCoord, EarthLocation, AltAz
+from astropy.coordinates import SkyCoord, EarthLocation, AltAz, get_sun
 from astropy.time import Time
 import astropy.units as u
 from astropy.wcs.utils import wcs_to_celestial_frame
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
+
+def is_time_suitable(input_time, longitude, latitude):
+
+    observation_time = Time(input_time)
+    location = EarthLocation(lat=latitude * u.deg, lon=longitude * u.deg)
+
+    # 计算太阳在 AltAz 坐标系中的位置
+    altaz_frame = AltAz(obstime=observation_time, location=location)
+    sun_altaz = get_sun(observation_time).transform_to(altaz_frame)
+
+    alt_deg = sun_altaz.alt.degree
+
+    return (-10 <= alt_deg <= -6)
 
 
 
@@ -112,31 +125,32 @@ if __name__ == "__main__":
     obs_location = EarthLocation(lat=33.3563 * u.deg, lon=-116.8650 * u.deg, height=1712 * u.m)
     obs_time = Time('2024-01-01 08:00:00')
 
-    # 处理每个WCS区域
-    results = []
-    for _, row in pd.read_csv('sky_WCS.csv').iterrows():
-        wcs = WCS(naxis=2)
-        wcs.wcs.crpix = [row['CRPIX1'], row['CRPIX2']]
-        wcs.wcs.cd = [[row['CD1_1'], row['CD1_2']], [row['CD2_1'], row['CD2_2']]]
-        wcs.wcs.crval = [row['CRVAL1'], row['CRVAL2']]
-        wcs.wcs.ctype = [row['CTYPE1'], row['CTYPE2']]
+    if not is_time_suitable(obs_time, obs_location.longitude, obs_location.latitude):
+        # 处理每个WCS区域
+        results = []
+        for _, row in pd.read_csv('sky_WCS.csv').iterrows():
+            wcs = WCS(naxis=2)
+            wcs.wcs.crpix = [row['CRPIX1'], row['CRPIX2']]
+            wcs.wcs.cd = [[row['CD1_1'], row['CD1_2']], [row['CD2_1'], row['CD2_2']]]
+            wcs.wcs.crval = [row['CRVAL1'], row['CRVAL2']]
+            wcs.wcs.ctype = [row['CTYPE1'], row['CTYPE2']]
 
-        visible, count, weight = calculate_region_visibility(
-            wcs=wcs,
-            image_shape=(row['NAXIS1'], row['NAXIS2']),
-            obs_time=obs_time,
-            obs_location=obs_location,
-            stars_icrs=stars_icrs,
-            mags=mags
-        )
+            visible, count, weight = calculate_region_visibility(
+                wcs=wcs,
+                image_shape=(row['NAXIS1'], row['NAXIS2']),
+                obs_time=obs_time,
+                obs_location=obs_location,
+                stars_icrs=stars_icrs,
+                mags=mags
+            )
 
-        results.append({
-            'sky_index': row['sky_index'],
-            'visible': visible,
-            'star_count': count,
-            'weight_sum': weight
-        })
+            results.append({
+                'sky_index': row['sky_index'],
+                'visible': visible,
+                'star_count': count,
+                'weight_sum': weight
+            })
 
-    # 输出结果
-    result_df = pd.DataFrame(results)
-    print(result_df)
+        # 输出结果
+        result_df = pd.DataFrame(results)
+        print(result_df)

@@ -39,10 +39,10 @@ def query_gaia_stars(center_ra, center_dec, fov_width, fov_height, buffer=0.2):
 # 使用示例
 if __name__ == "__main__":
     stars_table = query_gaia_stars(
-        center_ra=123.456,  # 替换实际RA
-        center_dec=-45.678,  # 替换实际Dec
-        fov_width=1.2,  # 视场宽度（度）
-        fov_height=0.8,  # 视场高度（度）
+        center_ra=123.456,
+        center_dec=-45.678,
+        fov_width=1.2,
+        fov_height=0.8,
         buffer=0.3
     )
 
