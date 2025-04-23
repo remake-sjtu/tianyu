@@ -29,7 +29,7 @@ def get_target_regions(obs_time, obs_lon, obs_lat):
 
     # 方位角范围 高度角范围
     return [
-        (anti_sun_az - 5 * u.deg, anti_sun_az + 5 * u.deg, 73 * u.deg, 77 * u.deg),  # 反太阳区
+        (anti_sun_az - 5 * u.deg, anti_sun_az + 5 * u.deg, 70 * u.deg, 90 * u.deg),  # 反太阳区
         (anti_moon_az - 5 * u.deg, anti_moon_az + 5 * u.deg, 60 * u.deg, 90 * u.deg)  # 反月亮区
     ]
 

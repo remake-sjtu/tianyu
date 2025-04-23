@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from astropy.wcs import WCS
-from astropy.coordinates import SkyCoord, EarthLocation, AltAz, get_sun
+from astropy.coordinates import SkyCoord, EarthLocation, AltAz, get_sun, get_body
 from astropy.time import Time
 import astropy.units as u
 from astropy.wcs.utils import wcs_to_celestial_frame
@@ -9,10 +9,32 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
 
-def is_time_suitable(input_time, longitude, latitude):
+# 观测时间 经度 纬度
+def get_target_regions(obs_time, obs_lon, obs_lat):
+    """获取需要搜索的目标区域（反太阳/月亮方向）"""
+    location = EarthLocation(lon=obs_lon * u.deg, lat=obs_lat * u.deg)
+    time = Time(obs_time)
 
+    # 计算太阳反方向区域  Altitude  Azimuth
+    # 地平坐标系 alt 高度角， az 方位角 相对于正北方向的水平角度
+    sun_altaz = get_sun(time).transform_to(AltAz(location=location, obstime=time))
+    anti_sun_az = (sun_altaz.az + 180 * u.deg) % (360 * u.deg)
+
+    # 计算月亮反方向区域
+    moon_altaz = get_body("moon", time).transform_to(AltAz(location=location, obstime=time))
+    anti_moon_az = (moon_altaz.az + 180 * u.deg) % (360 * u.deg)
+
+    # 方位角范围 高度角范围
+    return [
+        (anti_sun_az - 5 * u.deg, anti_sun_az + 5 * u.deg, 70 * u.deg, 90 * u.deg),  # 反太阳区
+        (anti_moon_az - 5 * u.deg, anti_moon_az + 5 * u.deg, 60 * u.deg, 90 * u.deg)  # 反月亮区
+    ]
+
+
+def is_time_suitable(input_time, location):
+
+    return True
     observation_time = Time(input_time)
-    location = EarthLocation(lat=latitude * u.deg, lon=longitude * u.deg)
 
     # 计算太阳在 AltAz 坐标系中的位置
     altaz_frame = AltAz(obstime=observation_time, location=location)
@@ -77,8 +99,7 @@ def generate_sky_WCS(NAXIS1, NAXIS2, pixel_scale, theta, xflip=False):
         WCS_info_dict["CD1_2"].append(CD_mat[0, 1])
         WCS_info_dict["CD2_1"].append(CD_mat[1, 0])
         WCS_info_dict["CD2_2"].append(CD_mat[1, 1])
-        if i == 10:
-            break
+
     WCS_info_dict = pd.DataFrame(WCS_info_dict)
     return WCS_info_dict
 
@@ -122,13 +143,66 @@ if __name__ == "__main__":
     stars_icrs = SkyCoord(ra=ra * u.deg, dec=dec * u.deg, frame='icrs')
 
     # 设置观测参数
-    obs_location = EarthLocation(lat=33.3563 * u.deg, lon=-116.8650 * u.deg, height=1712 * u.m)
+    obs_location = EarthLocation(lat=33.3563 * u.deg, lon=-116.8650 * u.deg)
     obs_time = Time('2024-01-01 08:00:00')
 
-    if not is_time_suitable(obs_time, obs_location.longitude, obs_location.latitude):
+    if is_time_suitable(obs_time, obs_location):
+        # 获取目标区域
+        target_regions = get_target_regions(obs_time, obs_location.lon.deg, obs_location.lat.deg)
+
+        target_regions_deg = []
+        for region in target_regions:
+            az_min = region[0].to_value(u.deg)
+            az_max = region[1].to_value(u.deg)
+            alt_min = region[2].to_value(u.deg)
+            alt_max = region[3].to_value(u.deg)
+            target_regions_deg.append((az_min, az_max, alt_min, alt_max))
+
+
         # 处理每个WCS区域
         results = []
-        for _, row in pd.read_csv('sky_WCS.csv').iterrows():
+        for i, row in pd.read_csv('sky_WCS.csv').iterrows():
+            if i % 1000 == 0 :
+                print(i)
+
+            # 获取中心点的坐标
+            center_ra = row['CRVAL1']  # 已经是度数
+            center_dec = row['CRVAL2']
+            center_coord = SkyCoord(ra=center_ra * u.deg, dec=center_dec * u.deg, frame='icrs')
+
+            # 转换为AltAz
+            try:
+                center_altaz = center_coord.transform_to(AltAz(obstime=obs_time, location=obs_location))
+            except:
+                # 转换失败，视为不可见
+                print("convert fail")
+                continue
+
+            az_deg = center_altaz.az.deg
+            alt_deg = center_altaz.alt.deg
+
+            # 检查是否在任一目标区域
+            in_region = False
+            for (az_min, az_min, alt_min, alt_max) in target_regions_deg:
+                # 检查高度角
+                if not (alt_min <= alt_deg <= alt_max):
+                    continue
+
+                # 检查方位角
+                # 处理方位角范围可能跨越0度的情况
+                if az_min <= az_max:
+                    az_condition = az_min <= az_deg <= az_max
+                else:
+                    az_condition = (az_deg >= az_min) or (az_deg <= az_max)
+
+                if az_condition:
+                    in_region = True
+                    break
+
+            if not in_region:
+                continue  # 跳过不在目标区域的区域
+
+
             wcs = WCS(naxis=2)
             wcs.wcs.crpix = [row['CRPIX1'], row['CRPIX2']]
             wcs.wcs.cd = [[row['CD1_1'], row['CD1_2']], [row['CD2_1'], row['CD2_2']]]
